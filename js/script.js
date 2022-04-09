@@ -165,7 +165,10 @@ var TrashModel = function(_lable, _cell, remarks) {
         for (var j in day_mix) {
           //休止期間だったら、今後一週間ずらす。
           var isShift = false;
-
+          //remarkだったらスキップする。
+          if (day_mix[j].charAt(0) === "*") {
+            continue;
+          }
           //week=0が第1週目です。
           for (var week = 0; week < 5; week++) {
             //4月1日を起点として第n曜日などを計算する。
