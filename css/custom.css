@@ -144,3 +144,8 @@ a:hover {
 .accordion-group-top {
 	background-color: #ffffff;
 }
+
+a.accordion-toggle {
+	color: white;
+	text-decoration: none;
+}
