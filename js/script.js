@@ -94,7 +94,10 @@ var TrashModel = function(_lable, _cell, remarks) {
     } else if (this.dayCell[j].length == 2 && this.dayCell[j].substr(0,1) == "*") {
     } else {
       if (this.dayCell.length > 1) {
-        result_text += "年末調整日"
+        var adjustmentDate = new Date(this.dayCell[j].substring(0,4) + '-' + this.dayCell[j].substring(4,6) + '-' + this.dayCell[j].substring(6,8));
+        if (today <= adjustmentDate) {
+          result_text += "年末調整日"
+        }
         this.sagaFlg = 1;
       } else {
         // 不定期回収の場合（YYYYMMDD指定）
