@@ -67,11 +67,9 @@ var TrashModel = function(_lable, _cell, remarks) {
   this.mflag = new Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   if (_cell.search(/:/) >= 0) {
     var flag = _cell.split(":");
-    // ★修正: trim()を追加して余分なスペースを除去し、正規表現で複数スペースにも対応
     this.dayCell = flag[0].trim().split(/\s+/);
     var mm = flag[1].split(" ");
   } else {
-    // ★修正: trim()と正規表現を使用して、複数のスペースにも対応
     this.dayCell = _cell.trim().split(/\s+/);
     var mm = new Array("4", "5", "6", "7", "8", "9", "10", "11", "12", "1", "2", "3");
   }
@@ -84,6 +82,9 @@ var TrashModel = function(_lable, _cell, remarks) {
 
   // 佐賀県内の年末調整データの有無
   this.sagaFlg = 0;
+  
+  // ★追加: 年末調整日のリストを保持
+  this.adjustmentDates = [];
 
   var result_text = "";
   var today = new Date();
@@ -100,8 +101,9 @@ var TrashModel = function(_lable, _cell, remarks) {
       // 定期回収と年末調整日が混在している場合
       if (this.dayCell.length > 1) {
         var adjustmentDate = new Date(this.dayCell[j].substring(0,4) + '-' + this.dayCell[j].substring(4,6) + '-' + this.dayCell[j].substring(6,8));
+        // ★修正: ラベルには追加せず、年末調整日リストに保存
         if (today <= adjustmentDate) {
-          result_text += "年末調整日 ";
+          this.adjustmentDates.push(adjustmentDate.getTime());
         }
         this.sagaFlg = 1;
       } else {
@@ -113,11 +115,31 @@ var TrashModel = function(_lable, _cell, remarks) {
   }
   this.dayLabel = result_text;
 
+  // ★修正: 日付ラベルを動的に生成するメソッド
   this.getDateLabel = function() {
     var result_text = ( this.mostRecent === undefined || this.mostRecent === null )
       ? ''
       : " " + this.mostRecent.getFullYear() + "/" + (1 + this.mostRecent.getMonth()) + "/" + this.mostRecent.getDate();
-    return this.getRemark() + this.dayLabel + result_text;
+    
+    // ★追加: mostRecentが年末調整日かどうかチェック
+    var isAdjustmentDate = false;
+    if (this.mostRecent !== undefined && this.mostRecent !== null) {
+      var mostRecentTime = this.mostRecent.getTime();
+      for (var i = 0; i < this.adjustmentDates.length; i++) {
+        if (mostRecentTime === this.adjustmentDates[i]) {
+          isAdjustmentDate = true;
+          break;
+        }
+      }
+    }
+    
+    // ★修正: 年末調整日の場合のみ「年末調整日」ラベルを追加
+    var labelText = this.dayLabel;
+    if (isAdjustmentDate) {
+      labelText += "年末調整日 ";
+    }
+    
+    return this.getRemark() + labelText + result_text;
   }
 
   var day_enum = ["日", "月", "火", "水", "木", "金", "土"];
@@ -177,7 +199,7 @@ var TrashModel = function(_lable, _cell, remarks) {
           if (day_mix[j].charAt(0) === "*") {
             continue;
           }
-          // ★修正: YYYYMMDDフォーマットの日付はこのループでスキップ
+          // YYYYMMDDフォーマットの日付はこのループでスキップ
           if (day_mix[j].match(/^\d{8}$/)) {
             continue;
           }
@@ -218,7 +240,7 @@ var TrashModel = function(_lable, _cell, remarks) {
           }
         }
       }
-      // ★修正: 年末調整日の追加処理を改善
+      // 年末調整日の追加処理
       if (this.sagaFlg === 1) {
         if (Array.isArray(day_mix)) {
           day_mix.forEach((v, i) => {
