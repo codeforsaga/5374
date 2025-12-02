@@ -113,12 +113,10 @@ var TrashModel = function(_lable, _cell, remarks) {
       var adjustmentDate = new Date(cell.substring(0,4) + '-' + cell.substring(4,6) + '-' + cell.substring(6,8));
       if (today <= adjustmentDate) {
         // 現在日より後の日付の場合のみ表示テキストに追加
-        // YYYYMMDDが複数ある場合、複数回「年末調整日」と表示される可能性あり
         result_text += "年末調整日"; 
       }
     } else if (cell.length == 2 && cell.substr(0,1) == "*") { 
       // 例: "*1" (備考フラグ)
-      // dayLabelには影響しない
     } else {
       // その他の拡張文字列
     }
@@ -203,3 +201,121 @@ var TrashModel = function(_lable, _cell, remarks) {
           if (day_mix[j] && day_mix[j].match(/^\d{8}$/)) { 
             continue; 
           }
+          
+          //week=0が第1週目です。
+          for (var week = 0; week < 5; week++) {
+            //4月1日を起点として第n曜日などを計算する。
+            var date = new Date(curYear, month - 1, 1);
+            var d = new Date(date);
+            //コンストラクタでやろうとするとうまく行かなかった。。
+            //
+            //4月1日を基準にして曜日の差分で時間を戻し、最大５週までの増加させて毎週を表現
+            d.setTime(date.getTime() + 1000 * 60 * 60 * 24 *
+              ((7 + getDayIndex(day_mix[j].charAt(0)) - date.getDay()) % 7) + week * 7 * 24 * 60 * 60 * 1000
+            );
+            //年末年始のずらしの対応
+            //休止期間なら、今後の日程を１週間ずらす
+            if (areaObj.isBlankDay(d)) {
+              if (WeekShift) {
+                isShift = true;
+              } else {
+                continue;
+              }
+            }
+            if (isShift) {
+              d.setTime(d.getTime() + 7 * 24 * 60 * 60 * 1000);
+            }
+            //同じ月の時のみ処理したい
+            if (d.getMonth() != (month - 1) % 12) {
+              continue;
+            }
+            //特定の週のみ処理する
+            if (day_mix[j].length > 1) {
+              if (week != day_mix[j].charAt(1) - 1) {
+                continue;
+              }
+            }
+            day_list.push(d);
+          }
+        }
+      }
+    } 
+    
+    // YYYYMMDD形式の例外日処理を if/else の外側に独立させる
+    if (Array.isArray(day_mix)) {
+      day_mix.forEach((v, i) => {
+        // YYYYMMDD形式にマッチした場合のみ処理
+        if (!v || !v.match(/^\d{8}$/)) { return; } 
+        
+        var year = parseInt(day_mix[i].substr(0, 4));
+        var month = parseInt(day_mix[i].substr(4, 2)) - 1;
+        var day = parseInt(day_mix[i].substr(6, 2));
+        var d = new Date(year, month, day);
+        
+        day_list.push(d);
+      });
+    }
+
+    //曜日によっては日付順ではないので最終的にソートする。
+    day_list.sort(function(a, b) {
+      var at = a.getTime();
+      var bt = b.getTime();
+      if (at < bt) return -1;
+      if (at > bt) return 1;
+      return 0;
+    })
+    //直近の日付を更新
+    var now = new Date();
+
+    for (var i in day_list) {
+      if (
+        ( this.mostRecent === undefined || this.mostRecent === null )
+        && now.getTime() < day_list[i].getTime() + 24 * 60 * 60 * 1000
+      ) {
+        this.mostRecent = day_list[i];
+        break;
+      }
+    };
+
+    this.dayList = day_list;
+  }
+  /**
+   計算したゴミの日一覧をリスト形式として取得します。
+  */
+  this.getDayList = function() {
+    var day_text = "<ul>";
+    for (var i in this.dayList) {
+      var d = this.dayList[i];
+      day_text += "<li>" + d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate() + "</li>";
+    };
+    day_text += "</ul>";
+    return day_text;
+  }
+}
+/**
+センターのデータを管理します。
+*/
+var CenterModel = function(row) {
+  function getDay(center, index) {
+    if (!center[index]) {
+        console.error("center.csvの日付データが不正です: row index " + index);
+        // 不正な場合は安全な日付を返す
+        return new Date(0); 
+    }
+    var tmp = center[index].split("/");
+    return new Date(tmp[0], tmp[1] - 1, tmp[2]);
+  }
+
+  this.name = row[0];
+  this.startDate = getDay(row, 1);
+  this.endDate = getDay(row, 2);
+}
+/**
+* ゴミのカテゴリを管理するクラスです。
+* description.csvのモデルです。
+*/
+var DescriptionModel = function(data) {
+  this.targets = new Array();
+
+  this.label = data[0];
+  this.sublabel =
