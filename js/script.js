@@ -93,16 +93,24 @@ var TrashModel = function(_lable, _cell, remarks) {
       result_text += "第" + this.dayCell[j].charAt(1) + this.dayCell[j].charAt(0) + "曜日 ";
     } else if (this.dayCell[j].length == 2 && this.dayCell[j].substr(0,1) == "*") {
     } else {
-      if (this.dayCell.length > 1) {
-        var adjustmentDate = new Date(this.dayCell[j].substring(0,4) + '-' + this.dayCell[j].substring(4,6) + '-' + this.dayCell[j].substring(6,8));
-        if (today <= adjustmentDate) {
-          result_text += "年末調整日"
+      // YYYYMMDD形式の文字列が来る可能性のある場所
+      if (this.dayCell[j].match(/^\d{8}$/)) {
+        // YYYYMMDD形式の場合
+        if (this.dayCell.length > 1) { 
+          // 定期パターンと混在している場合（例外日）
+          var adjustmentDate = new Date(this.dayCell[j].substring(0,4) + '-' + this.dayCell[j].substring(4,6) + '-' + this.dayCell[j].substring(6,8));
+          if (today <= adjustmentDate) {
+            result_text += "年末調整日"
+          }
+          this.sagaFlg = 1; // フラグは設定されるが、計算ロジックは独立させる
+        } else {
+          // YYYYMMDD形式のみの場合（不定期回収）
+          result_text = "不定期 ";
+          this.regularFlg = 0;  // 定期回収フラグオフ
         }
-        this.sagaFlg = 1;
       } else {
-        // 不定期回収の場合（YYYYMMDD指定）
-        result_text = "不定期 ";
-        this.regularFlg = 0;  // 定期回収フラグオフ
+        // その他の拡張文字列の場合（ここでは処理をスキップまたは既存処理維持）
+        // 元のコードではここに到達しないはずですが、念のため
       }
     }
   }
@@ -141,6 +149,7 @@ var TrashModel = function(_lable, _cell, remarks) {
     });
     return ret;
   }
+  
   /**
   このゴミの年間のゴミの日を計算します。
   センターが休止期間がある場合は、その期間１週間ずらすという実装を行っております。
@@ -172,6 +181,12 @@ var TrashModel = function(_lable, _cell, remarks) {
           if (day_mix[j].charAt(0) === "*") {
             continue;
           }
+          
+          // 💡 修正 1: YYYYMMDD形式の特例日はここでは処理しない (定期パターンのみを計算)
+          if (day_mix[j].match(/^\d{8}$/)) { 
+            continue; 
+          }
+          
           //week=0が第1週目です。
           for (var week = 0; week < 5; week++) {
             //4月1日を起点として第n曜日などを計算する。
@@ -209,31 +224,27 @@ var TrashModel = function(_lable, _cell, remarks) {
           }
         }
       }
-      if (this.sagaFlg === 1) {
-        if (Array.isArray(day_mix)) {
-          day_mix.forEach((v, i) => {
-            if (!v.match(/^\d{8}$/)) { return; }
-            var year = parseInt(day_mix[i].substr(0, 4));
-            var month = parseInt(day_mix[i].substr(4, 2)) - 1;
-            var day = parseInt(day_mix[i].substr(6, 2));
-            var d = new Date(year, month, day);
-            day_list.push(d);
-          });
-        }
-      }
-    } else {
-      // 不定期回収の場合は、そのまま指定された日付をセットする
-      if (Array.isArray(day_mix)) {
-        day_mix.forEach((v, i) => {
-          if (!v.match(/^\d{8}$/)) { return; }
-          var year = parseInt(day_mix[i].substr(0, 4));
-          var month = parseInt(day_mix[i].substr(4, 2)) - 1;
-          var day = parseInt(day_mix[i].substr(6, 2));
-          var d = new Date(year, month, day);
-          day_list.push(d);
-        });
-      }
+    } 
+    /* 元のコードにあった else { ... } ブロックは削除しました。
+     不定期回収（YYYYMMDD指定）の処理は、以下の独立したブロックに統合されます。
+     これにより、定期・不定期を問わず、YYYYMMDD形式の日付が正しく処理されます。
+    */
+    
+    // 💡 修正 2: YYYYMMDD形式の例外日処理を if/else の外側に独立させる
+    if (Array.isArray(day_mix)) {
+      day_mix.forEach((v, i) => {
+        // YYYYMMDD形式にマッチした場合のみ処理
+        if (!v.match(/^\d{8}$/)) { return; }
+        
+        var year = parseInt(day_mix[i].substr(0, 4));
+        var month = parseInt(day_mix[i].substr(4, 2)) - 1;
+        var day = parseInt(day_mix[i].substr(6, 2));
+        var d = new Date(year, month, day);
+        
+        day_list.push(d);
+      });
     }
+
     //曜日によっては日付順ではないので最終的にソートする。
     //ソートしなくてもなんとなりそうな気もしますが、とりあえずソート
     day_list.sort(function(a, b) {
@@ -331,14 +342,14 @@ var AreaMasterModel = function() {
 /* var windowHeight; */
 
 $(function() {
-/*   windowHeight = $(window).height(); */
+/* windowHeight = $(window).height(); */
 
   var center_data = new Array();
   var descriptions = new Array();
   var areaModels = new Array();
   var remarks = new Array();
   var areaMasterModels  = new Array();
-/*   var descriptions = new Array(); */
+/* var descriptions = new Array(); */
 
 
   // ローカルストレージ（エリア名）
@@ -479,291 +490,4 @@ $(function() {
           select_html += '<option value="' + row_index + '" ' + selected + " >" + area_name + "</option>";
         }
 
-        //デバッグ用
-        if (typeof dump == "function") {
-          dump(areaModels);
-        }
-        //HTMLへの適応
-        area_select_form.html(select_html);
-        area_select_form.change();
-      });
-    });
-  }
-
-
-  function createMenuList(after_action) {
-    // 備考データを読み込む
-    csvToArray("data/remarks.csv", function(data) {
-      data.shift();
-      for (var i in data) {
-        remarks.push(new RemarkModel(data[i]));
-      }
-    });
-    csvToArray("data/description.csv", function(data) {
-      data.shift();
-      for (var i in data) {
-        descriptions.push(new DescriptionModel(data[i]));
-      }
-
-      csvToArray("data/target.csv", function(data) {
-
-        data.shift();
-        for (var i in data) {
-          var row = new TargetRowModel(data[i]);
-          for (var j = 0; j < descriptions.length; j++) {
-            //一致してるものに追加する。
-            if (descriptions[j].label == row.type) {
-              descriptions[j].targets.push(row);
-              break;
-            }
-          };
-        }
-        after_action();
-        $("#accordion2").show();
-
-      });
-
-    });
-
-  }
-
-  function updateData(row_index) {
-    //SVG が使えるかどうかの判定を行う。
-    //TODO Android 2.3以下では見れない（代替の表示も含め）不具合が改善されてない。。
-    //参考 http://satussy.blogspot.jp/2011/12/javascript-svg.html
-    var ableSVG = (window.SVGAngle !== void 0);
-    //var ableSVG = false;  // SVG未使用の場合、descriptionの1項目目を使用
-    var areaModel = areaModels[row_index];
-    var today = new Date();
-
-    // today = new Date('2022-12-10')
-    //直近の一番近い日付を計算します。
-    areaModel.calcMostRect();
-    //トラッシュの近い順にソートします。
-    areaModel.sortTrash();
-    var accordion_height = window.innerHeight / descriptions.length;
-    if(descriptions.length>4){
-      accordion_height = window.innerHeight / 4.1;
-      if (accordion_height>140) {accordion_height = window.innerHeight / descriptions.length;};
-      if (accordion_height<130) {accordion_height=130;};
-    }
-    var styleHTML = "";
-    var accordionHTML = "";
-    //アコーディオンの分類から対応の計算を行います。
-    for (var i in areaModel.trash) {
-      var trash = areaModel.trash[i];
-
-      for (var d_no in descriptions) {
-        var description = descriptions[d_no];
-       if (description.label != trash.label) {
-          continue;
-        }
-          var target_tag = "";
-          var furigana = "";
-          var target_tag = "";
-          var targets = description.targets;
-          for (var j in targets) {
-            var target = targets[j];
-            if (furigana != target.furigana) {
-              if (furigana != "") {
-                target_tag += "</ul>";
-              }
-
-              furigana = target.furigana;
-
-              target_tag += '<h4 class="initials">' + furigana + "</h4>";
-              target_tag += "<ul>";
-            }
-
-            target_tag += '<li style="list-style:none;">' + target.name + "</li>";
-            target_tag += '<p class="note">' + target.notice + "</p>";
-          }
-
-          target_tag += "</ul>";
-
-          var dateLabel = trash.getDateLabel();
-          // あと何日かを計算する処理
-          var leftDay = ( trash.mostRecent === undefined || trash.mostRecent === null )
-            ? null
-            : Math.ceil((trash.mostRecent.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-          var leftDayText = "";
-          if (leftDay === 0) {
-            leftDayText = "今日";
-          } else if (leftDay === 1) {
-            leftDayText = "明日";
-          } else if (leftDay === 2) {
-            leftDayText = "明後日"
-          } else if (leftDay >= 3) {
-            leftDayText = leftDay + "日後";
-          }
-
-          styleHTML += '#accordion-group' + d_no + '{background-color:  ' + description.background + ';} ';
-
-          accordionHTML +=
-            '<div class="accordion-group" id="accordion-group' + d_no + '">' +
-            '<div class="accordion-heading">' +
-            '<a class="accordion-toggle" style="height:' + accordion_height + 'px" data-toggle="collapse" data-parent="#accordion" href="#collapse' + i + '">' +
-            '<div class="left-day">' + leftDayText + '</div>' +
-            '<div class="accordion-table" >';
-          if (ableSVG && SVGLabel) {
-            accordionHTML += '<img src="' + description.styles + '" alt="' + description.label + '"  />';
-          } else {
-            accordionHTML += '<p class="text-center">' + description.label + "</p>";
-          }
-          accordionHTML += "</div>" +
-            '<h6><p class="text-left date">' + dateLabel + "</p></h6>" +
-            "</a>" +
-            "</div>" +
-            '<div id="collapse' + i + '" class="accordion-body collapse">' +
-            '<div class="accordion-inner">' +
-            description.description + "<br />" + target_tag +
-            '<div class="targetDays"></div></div>' +
-            "</div>" +
-            "</div>";
-      }
-    }
-    $("#accordion-style").html('<!-- ' + styleHTML + ' -->');
-
-    var accordion_elm = $("#accordion");
-    accordion_elm.html(accordionHTML);
-
-    $('html,body').animate({scrollTop: 0}, 'fast');
-
-    //アコーディオンのラベル部分をクリックしたら
-    $(".accordion-body").on("shown.bs.collapse", function() {
-      var body = $('body');
-      var accordion_offset = $($(this).parent().get(0)).offset().top;
-      body.animate({
-        scrollTop: accordion_offset
-      }, 50);
-    });
-    //アコーディオンの非表示部分をクリックしたら
-    $(".accordion-body").on("hidden.bs.collapse", function() {
-      if ($(".in").length == 0) {
-        $("html, body").scrollTop(0);
-      }
-    });
-  }
-
-  function onChangeSelect(row_index) {　
-    if (row_index == -1) {
-      $("#accordion").html("");
-      setSelectedAreaName("");
-      return;
-    }
-    setSelectedAreaName(areaModels[row_index].label);
-
-    if ($("#accordion").children().length === 0 && descriptions.length === 0) {
-      createMenuList(function() {
-        updateData(row_index);
-      });
-    } else {
-      updateData(row_index);
-    }
-  }
-
-  // ★マスターの変更時
-  function onChangeSelectMaster(row_index) {　
-    if (row_index == -1) {
-      // 初期化
-      $("#accordion").html("");
-      $("#select_area").html('<option value="-1">地域を選択してください</option>');
-      setSelectedAreaMasterName("");
-      return;
-    }
-
-    var checkAreaMasterName = getSelectedAreaMasterName();
-    var checkAreaMasterNameBefore = getSelectedAreaMasterNameBefore();
-
-    if(checkAreaMasterName == checkAreaMasterNameBefore){
-    }else{
-      $("#accordion").html("");
-      $("#select_area").html('<option value="-1">地域を選択してください</option>');
-      setSelectedAreaName("");
-    }
-
-    areaModels.length = 0;
-
-    setSelectedAreaMasterName(areaMasterModels[row_index].name);
-    setSelectedAreaMasterNameBefore(areaMasterModels[row_index].name);
-
-    updateAreaList(areaMasterModels[row_index].mastercode);
-
-  }
-
-
-  function getAreaIndex(area_name) {
-    for (var i in areaModels) {
-      if (areaModels[i].label == area_name) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  // リストマスターが選択されたら
-  $("#select_area_master").change(function(data) {
-    var row_index = $(data.target).val();
-    //onChangeSelect(row_index);
-    // ★ここでselect area変更用の読み込み処理
-    onChangeSelectMaster(row_index);
-  });
-
-  //リストが選択されたら
-  $("#select_area").change(function(data) {
-    var row_index = $(data.target).val();
-    onChangeSelect(row_index);
-  });
-
-  //-----------------------------------
-  //位置情報をもとに地域を自動的に設定する処理です。
-  //これから下は現在、利用されておりません。
-  //将来的に使うかもしれないので残してあります。
-  $("#gps_area").click(function() {
-    navigator.geolocation.getCurrentPosition(function(position) {
-      $.getJSON("area_candidate.php", {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude
-      }, function(data) {
-        if (data.result == true) {
-          var area_name = data.candidate;
-          var index = getAreaIndex(area_name);
-          $("#select_area").val(index).change();
-          alert(area_name + "が設定されました");
-        } else {
-          alert(data.reason);
-        }
-      })
-
-    }, function(error) {
-      alert(getGpsErrorMessage(error));
-    });
-  });
-
-  if (getSelectedAreaName() == null) {
-    $("#accordion2").show();
-    $("#collapseZero").addClass("in");
-  }
-  if (!navigator.geolocation) {
-    $("#gps_area").css("display", "none");
-  }
-
-  function getGpsErrorMessage(error) {
-    switch (error.code) {
-      case error.PERMISSION_DENIED:
-        return "User denied the request for Geolocation."
-      case error.POSITION_UNAVAILABLE:
-        return "Location information is unavailable."
-      case error.TIMEOUT:
-        return "The request to get user location timed out."
-      case error.UNKNOWN_ERROR:
-      default:
-        return "An unknown error occurred."
-    }
-  }
-
-  masterAreaList();
-  //updateAreaList();
-
-});
+        //
