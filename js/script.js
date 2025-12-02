@@ -318,4 +318,547 @@ var DescriptionModel = function(data) {
   this.targets = new Array();
 
   this.label = data[0];
-  this.sublabel =
+  this.sublabel = data[1];//not used
+  this.description = data[2];//not used
+  this.styles = data[3];
+  this.background = data[4];
+
+}
+/**
+ * ゴミのカテゴリの中のゴミの具体的なリストを管理するクラスです。
+ * target.csvのモデルです。
+ */
+var TargetRowModel = function(data) {
+  this.type = data[0];
+  this.name = data[1];
+  this.notice = data[2];
+  this.furigana = data[3];
+}
+
+/**
+ * ゴミ収集日に関する備考を管理するクラスです。
+ * remarks.csvのモデルです。
+ */
+var RemarkModel = function(arg) {
+  this.id = arg[0];
+  this.text = arg[1];
+}
+
+/**
+  エリアマスターを管理するクラスです。
+  area_master.csvのモデルです。
+*/
+var AreaMasterModel = function() {
+  this.mastercode;
+  this.name;
+}
+
+
+/* var windowHeight; */
+
+$(function() {
+/* windowHeight = $(window).height(); */
+
+  var center_data = new Array();
+  var descriptions = new Array();
+  var areaModels = new Array();
+  var remarks = new Array();
+  var areaMasterModels  = new Array();
+/* var descriptions = new Array(); */
+
+
+  // ローカルストレージ（エリア名）
+  function getSelectedAreaName() {
+    return localStorage.getItem("selected_area_name");
+  }
+
+  function setSelectedAreaName(name) {
+    localStorage.setItem("selected_area_name", name);
+  }
+
+  // ローカルストレージ（エリアマスター名）
+  function getSelectedAreaMasterName() {
+    return localStorage.getItem("selected_area_master_name");
+  }
+
+  function setSelectedAreaMasterName(name) {
+    localStorage.setItem("selected_area_master_name", name);
+  }
+
+  // ローカルストレージ（エリアマスター名）
+  function getSelectedAreaMasterNameBefore() {
+    return localStorage.getItem("selected_area_master_name_before");
+  }
+
+  function setSelectedAreaMasterNameBefore(name) {
+    localStorage.setItem("selected_area_master_name_before", name);
+  }
+
+  function csvToArray(filename, cb) {
+    $.get(filename, function(csvdata) {
+      //CSVのパース作業
+      csvdata = csvdata.replace(/\r/gm, "");
+      var line = csvdata.split("\n"),
+          ret = [];
+      for (var i in line) {
+        //空行はスルーする。
+        if (line[i].length == 0) continue;
+
+        var row = line[i].split(",");
+        ret.push(row);
+      }
+      cb(ret);
+    })
+    .fail(function() {
+        console.error("CSVファイルの読み込みに失敗しました: " + filename);
+        // エラーが発生した場合も空の配列を返すことで、後続処理の中断を防ぐ
+        cb([]); 
+    });
+  }
+
+
+  function masterAreaList() {
+    // ★エリアのマスターリストを読み込みます
+    csvToArray("data/area_master.csv", function(tmp) {
+      if (!tmp || tmp.length < 2) { 
+          console.warn("area_master.csv にデータがありません。");
+          return; 
+      }
+      areaMasterModels.length = 0; // 確実なリセット
+      var area_master_label = tmp.shift();    // ラベル
+      for (var i in tmp) {
+        var row = tmp[i];
+        if (!row[0] || !row[1]) continue; 
+        
+        var area_master = new AreaMasterModel();
+        area_master.mastercode = row[0];
+        area_master.name = row[1];
+        areaMasterModels.push(area_master);
+      }
+
+      // ListメニューのHTMLを作成
+      var selected_master_name = getSelectedAreaMasterName();
+      var area_master_select_form = $("#select_area_master");
+      var select_master_html = "";
+      select_master_html += '<option value="-1">地域を選択してください</option>';
+      for (var row_index in areaMasterModels) {
+        var area_master_name = areaMasterModels[row_index].name;
+        var selected = (selected_master_name == area_master_name) ? 'selected="selected"' : "";
+
+        select_master_html += '<option value="' + row_index + '" ' + selected + " >" + area_master_name + "</option>";
+      }
+
+      //デバッグ用
+      if (typeof dump == "function") {
+        dump(areaMasterModels);
+      }
+      //HTMLへの適応
+      area_master_select_form.html(select_master_html);
+      area_master_select_form.change();
+    });
+  }
+
+
+  function updateAreaList(mastercode) {
+    areaModels.length = 0; // エリアモデルをクリア
+
+    csvToArray("data/area_days.csv", function(tmp) {
+      if (!tmp || tmp.length < 2) { 
+          console.warn("area_days.csv にデータがありません。");
+          finalizeUpdateAreaList([]); 
+          return;
+      }
+      
+      var area_days_label = tmp.shift();
+      for (var i in tmp) {
+        var row = tmp[i];
+        
+        // データの最低限のチェック
+        if (!row[0] || !row[1] || row[0] !== mastercode) continue; 
+        
+        var area = new AreaModel();
+        area.mastercode = row[0];
+        area.label = row[1];
+        area.centerName = row[2];
+
+        // 区コードが一致した場合のみデータ格納
+        if(area.mastercode == mastercode){
+          areaModels.push(area);
+          //２列目以降の処理
+          for (var r = 3; r < 3 + MaxDescription; r++) {
+            if (area_days_label[r] && row[r] !== undefined) {
+              try {
+                var trash = new TrashModel(area_days_label[r], row[r], remarks);
+                area.trash.push(trash);
+              } catch (e) {
+                console.error("TrashModelの初期化に失敗しました。行: " + row[1] + ", エラー: " + e.message);
+              }
+            }
+          }
+        }
+      }
+
+      csvToArray("data/center.csv", function(tmp) {
+        //ゴミ処理センターのデータを解析します。
+        center_data.length = 0; // センターデータをクリア
+        if (tmp && tmp.length > 0) {
+            tmp.shift();
+            for (var i in tmp) {
+              var row = tmp[i];
+              if (!row[0] || !row[1] || !row[2]) continue;
+
+              try {
+                  var center = new CenterModel(row);
+                  center_data.push(center);
+              } catch (e) {
+                  console.error("CenterModelの初期化に失敗しました。行: " + row[0] + ", エラー: " + e.message);
+              }
+            }
+        }
+        
+        finalizeUpdateAreaList(areaModels);
+      });
+    });
+  }
+
+  function finalizeUpdateAreaList(models) {
+    //ゴミ処理センターを対応する各地域に割り当てます。
+    for (var i in models) {
+      var area = models[i];
+      area.setCenter(center_data);
+    };
+    //エリアとゴミ処理センターを対応後に、表示のリストを生成する。
+    //ListメニューのHTML作成
+    var selected_name = getSelectedAreaName();
+    var area_select_form = $("#select_area");
+    var select_html = "";
+    select_html += '<option value="-1">地域を選択してください</option>';
+    for (var row_index in models) {
+      var area_name = models[row_index].label;
+      var selected = (selected_name == area_name) ? 'selected="selected"' : "";
+
+      select_html += '<option value="' + row_index + '" ' + selected + " >" + area_name + "</option>";
+    }
+
+    //デバッグ用
+    if (typeof dump == "function") {
+      dump(models);
+    }
+    //HTMLへの適応
+    area_select_form.html(select_html);
+    area_select_form.change();
+  }
+
+
+  function createMenuList(after_action) {
+    // 備考データを読み込む
+    csvToArray("data/remarks.csv", function(data) {
+      remarks.length = 0; // 備考データをクリア
+      if (data && data.length > 1) { // データを1行以上確認
+        data.shift();
+        for (var i in data) {
+          if (!data[i][0] || !data[i][1]) continue;
+          remarks.push(new RemarkModel(data[i]));
+        }
+      }
+      
+      // description.csvを読み込む
+      csvToArray("data/description.csv", function(data) {
+        descriptions.length = 0; // descriptionをクリア
+        
+        if (!data || data.length < 2) {
+            console.warn("description.csv にデータがありません。");
+            after_action();
+            $("#accordion2").show();
+            return;
+        }
+        
+        data.shift();
+        for (var i in data) {
+          if (!data[i][0] || !data[i][3]) continue;
+          descriptions.push(new DescriptionModel(data[i]));
+        }
+
+        // target.csvを読み込む
+        csvToArray("data/target.csv", function(data) {
+          
+          if (!data || data.length < 2) {
+              console.warn("target.csv にデータがありません。");
+          } else {
+            data.shift();
+            for (var i in data) {
+              var row = new TargetRowModel(data[i]);
+              if (!row.type) continue;
+              for (var j = 0; j < descriptions.length; j++) {
+                //一致してるものに追加する。
+                if (descriptions[j].label == row.type) {
+                  descriptions[j].targets.push(row);
+                  break;
+                }
+              };
+            }
+          }
+          // すべてのデータロードが完了したら、アクションを実行し、アコーディオンを表示
+          after_action();
+          $("#accordion2").show();
+
+        }); // target.csv 終了
+
+      }); // description.csv 終了
+
+    }); // remarks.csv 終了
+
+  }
+
+  function updateData(row_index) {
+    //SVG が使えるかどうかの判定を行う。
+    var ableSVG = (window.SVGAngle !== void 0);
+    
+    if (!areaModels || !areaModels[row_index]) {
+        console.error("無効な地域インデックスです: " + row_index);
+        return;
+    }
+    
+    var areaModel = areaModels[row_index];
+    var today = new Date();
+
+    //直近の一番近い日付を計算します。
+    areaModel.calcMostRect();
+    //トラッシュの近い順にソートします。
+    areaModel.sortTrash();
+    
+    var windowHeight = window.innerHeight || 600; 
+    var accordion_height = windowHeight / descriptions.length;
+    if(descriptions.length>4){
+      accordion_height = windowHeight / 4.1;
+      if (accordion_height>140) {accordion_height = windowHeight / descriptions.length;};
+      if (accordion_height<130) {accordion_height=130;};
+    }
+    var styleHTML = "";
+    var accordionHTML = "";
+    
+    //アコーディオンの分類から対応の計算を行います。
+    for (var i in areaModel.trash) {
+      var trash = areaModel.trash[i];
+      if (!trash || !trash.label) continue;
+
+      for (var d_no in descriptions) {
+        var description = descriptions[d_no];
+       if (description.label != trash.label) {
+          continue;
+        }
+          var target_tag = "";
+          var furigana = "";
+          var target_tag = "";
+          var targets = description.targets;
+          for (var j in targets) {
+            var target = targets[j];
+            if (furigana != target.furigana) {
+              if (furigana != "") {
+                target_tag += "</ul>";
+              }
+
+              furigana = target.furigana;
+
+              target_tag += '<h4 class="initials">' + furigana + "</h4>";
+              target_tag += "<ul>";
+            }
+
+            target_tag += '<li style="list-style:none;">' + target.name + "</li>";
+            target_tag += '<p class="note">' + target.notice + "</p>";
+          }
+
+          target_tag += "</ul>";
+
+          var dateLabel = trash.getDateLabel();
+          // あと何日かを計算する処理
+          var leftDay = ( trash.mostRecent === undefined || trash.mostRecent === null )
+            ? null
+            : Math.ceil((trash.mostRecent.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+          var leftDayText = "";
+          if (leftDay === 0) {
+            leftDayText = "今日";
+          } else if (leftDay === 1) {
+            leftDayText = "明日";
+          } else if (leftDay === 2) {
+            leftDayText = "明後日"
+          } else if (leftDay >= 3) {
+            leftDayText = leftDay + "日後";
+          }
+
+          styleHTML += '#accordion-group' + d_no + '{background-color:  ' + description.background + ';} ';
+
+          accordionHTML +=
+            '<div class="accordion-group" id="accordion-group' + d_no + '">' +
+            '<div class="accordion-heading">' +
+            '<a class="accordion-toggle" style="height:' + accordion_height + 'px" data-toggle="collapse" data-parent="#accordion" href="#collapse' + i + '">' +
+            '<div class="left-day">' + leftDayText + '</div>' +
+            '<div class="accordion-table" >';
+          if (ableSVG && typeof SVGLabel !== 'undefined' && SVGLabel) {
+            accordionHTML += '<img src="' + description.styles + '" alt="' + description.label + '"  />';
+          } else {
+            accordionHTML += '<p class="text-center">' + description.label + "</p>";
+          }
+          accordionHTML += "</div>" +
+            '<h6><p class="text-left date">' + dateLabel + "</p></h6>" +
+            "</a>" +
+            "</div>" +
+            '<div id="collapse' + i + '" class="accordion-body collapse">' +
+            '<div class="accordion-inner">' +
+            description.description + "<br />" + target_tag +
+            '<div class="targetDays"></div></div>' +
+            "</div>" +
+            "</div>";
+      }
+    }
+    $("#accordion-style").html('');
+
+    var accordion_elm = $("#accordion");
+    accordion_elm.html(accordionHTML);
+
+    $('html,body').animate({scrollTop: 0}, 'fast');
+
+    //アコーディオンのラベル部分をクリックしたら
+    $(".accordion-body").on("shown.bs.collapse", function() {
+      var body = $('body');
+      var accordion_offset = $($(this).parent().get(0)).offset().top;
+      body.animate({
+        scrollTop: accordion_offset
+      }, 50);
+    });
+    //アコーディオンの非表示部分をクリックしたら
+    $(".accordion-body").on("hidden.bs.collapse", function() {
+      if ($(".in").length == 0) {
+        $("html, body").scrollTop(0);
+      }
+    });
+  }
+
+  function onChangeSelect(row_index) {　
+    if (row_index == -1) {
+      $("#accordion").html("");
+      setSelectedAreaName("");
+      return;
+    }
+    setSelectedAreaName(areaModels[row_index].label);
+
+    if ($("#accordion").children().length === 0 && descriptions.length === 0) {
+      createMenuList(function() {
+        updateData(row_index);
+      });
+    } else {
+      updateData(row_index);
+    }
+  }
+
+  // ★マスターの変更時
+  function onChangeSelectMaster(row_index) {　
+    if (row_index == -1) {
+      // 初期化
+      $("#accordion").html("");
+      $("#select_area").html('<option value="-1">地域を選択してください</option>');
+      setSelectedAreaMasterName("");
+      setSelectedAreaMasterNameBefore("");
+      return;
+    }
+
+    var checkAreaMasterName = getSelectedAreaMasterName();
+    var checkAreaMasterNameBefore = getSelectedAreaMasterNameBefore();
+
+    if(checkAreaMasterName == checkAreaMasterNameBefore){
+    }else{
+      $("#accordion").html("");
+      $("#select_area").html('<option value="-1">地域を選択してください</option>');
+      setSelectedAreaName("");
+    }
+    
+    if (!areaMasterModels || !areaMasterModels[row_index]) {
+        console.error("無効なマスターインデックスです: " + row_index);
+        return;
+    }
+
+    setSelectedAreaMasterName(areaMasterModels[row_index].name);
+    setSelectedAreaMasterNameBefore(areaMasterModels[row_index].name);
+
+    updateAreaList(areaMasterModels[row_index].mastercode);
+
+  }
+
+
+  function getAreaIndex(area_name) {
+    for (var i in areaModels) {
+      if (areaModels[i].label == area_name) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  // リストマスターが選択されたら
+  $("#select_area_master").change(function(data) {
+    var row_index = $(data.target).val();
+    onChangeSelectMaster(row_index);
+  });
+
+  //リストが選択されたら
+  $("#select_area").change(function(data) {
+    var row_index = $(data.target).val();
+    onChangeSelect(row_index);
+  });
+
+  //-----------------------------------
+  //位置情報をもとに地域を自動的に設定する処理です。
+  $("#gps_area").click(function() {
+    if (typeof navigator.geolocation === 'undefined') {
+        alert("ご利用のブラウザは位置情報に対応していません。");
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(function(position) {
+      $.getJSON("area_candidate.php", {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      }, function(data) {
+        if (data.result == true) {
+          var area_name = data.candidate;
+          var index = getAreaIndex(area_name);
+          $("#select_area").val(index).change();
+          alert(area_name + "が設定されました");
+        } else {
+          alert(data.reason);
+        }
+      })
+
+    }, function(error) {
+      alert(getGpsErrorMessage(error));
+    });
+  });
+
+  if (getSelectedAreaName() == null) {
+    $("#accordion2").show();
+    $("#collapseZero").addClass("in");
+  }
+  if (typeof navigator.geolocation === 'undefined') {
+    $("#gps_area").css("display", "none");
+  }
+
+
+  function getGpsErrorMessage(error) {
+    switch (error.code) {
+      case error.PERMISSION_DENIED:
+        return "User denied the request for Geolocation."
+      case error.POSITION_UNAVAILABLE:
+        return "Location information is unavailable."
+      case error.TIMEOUT:
+        return "The request to get user location timed out."
+      case error.UNKNOWN_ERROR:
+      default:
+        return "An unknown error occurred."
+    }
+  }
+
+  // アプリ起動時のメイン処理
+  masterAreaList();
+
+});
