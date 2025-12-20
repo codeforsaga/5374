@@ -89,6 +89,8 @@ var TrashModel = function(_lable, _cell, remarks) {
   var result_text = "";
   var today = new Date();
 
+  console.log("TrashModel初期化:", _lable, "dayCell:", this.dayCell);
+
   for (var j in this.dayCell) {
     if (this.dayCell[j].length == 1) {
       result_text += "毎週" + this.dayCell[j] + "曜日 ";
@@ -99,11 +101,14 @@ var TrashModel = function(_lable, _cell, remarks) {
     } else if (this.dayCell[j].match(/^\d{8}$/)) {
       // ★修正: YYYYMMDDフォーマットの日付を検出
       // 定期回収と年末調整日が混在している場合
+      console.log("YYYYMMDD形式検出:", this.dayCell[j], "label:", _lable);
       if (this.dayCell.length > 1) {
         var adjustmentDate = new Date(this.dayCell[j].substring(0,4) + '-' + this.dayCell[j].substring(4,6) + '-' + this.dayCell[j].substring(6,8));
+        console.log("年末調整日パース:", adjustmentDate, "タイムスタンプ:", adjustmentDate.getTime());
         // ★修正: ラベルには追加せず、年末調整日リストに保存
         if (today <= adjustmentDate) {
           this.adjustmentDates.push(adjustmentDate.getTime());
+          console.log("adjustmentDatesに追加しました。現在の配列:", this.adjustmentDates);
         }
         this.sagaFlg = 1;
       } else {
@@ -117,31 +122,25 @@ var TrashModel = function(_lable, _cell, remarks) {
 
   // ★修正: 日付ラベルを動的に生成するメソッド
   this.getDateLabel = function() {
+    console.log("getDateLabel呼び出し - label:", this.label);
+    
     var result_text = ( this.mostRecent === undefined || this.mostRecent === null )
       ? ''
       : " " + this.mostRecent.getFullYear() + "/" + (1 + this.mostRecent.getMonth()) + "/" + this.mostRecent.getDate();
     
     // デバッグログ追加
-    if (this.label === "燃えないごみ") {
-      console.log("=== getDateLabel デバッグ ===");
-      console.log("label:", this.label);
-      console.log("mostRecent:", this.mostRecent);
-      console.log("adjustmentDates配列の長さ:", this.adjustmentDates.length);
-      console.log("adjustmentDates内容:", this.adjustmentDates);
-      if (this.mostRecent) {
-        console.log("mostRecentのタイムスタンプ:", this.mostRecent.getTime());
-        console.log("mostRecentの日付文字列:", this.mostRecent.toString());
-      }
-    }
+    console.log("  mostRecent:", this.mostRecent);
+    console.log("  adjustmentDates配列の長さ:", this.adjustmentDates.length);
+    console.log("  adjustmentDates内容:", this.adjustmentDates);
     
     // ★追加: mostRecentが年末調整日かどうかチェック
     var isAdjustmentDate = false;
     if (this.mostRecent !== undefined && this.mostRecent !== null) {
       var mostRecentTime = this.mostRecent.getTime();
+      console.log("  mostRecentのタイムスタンプ:", mostRecentTime);
+      
       for (var i = 0; i < this.adjustmentDates.length; i++) {
-        if (this.label === "燃えないごみ") {
-          console.log("比較 [" + i + "]:", mostRecentTime, "===", this.adjustmentDates[i], "?", mostRecentTime === this.adjustmentDates[i]);
-        }
+        console.log("  比較 [" + i + "]:", mostRecentTime, "===", this.adjustmentDates[i], "?", mostRecentTime === this.adjustmentDates[i]);
         if (mostRecentTime === this.adjustmentDates[i]) {
           isAdjustmentDate = true;
           break;
@@ -149,16 +148,16 @@ var TrashModel = function(_lable, _cell, remarks) {
       }
     }
     
-    if (this.label === "燃えないごみ") {
-      console.log("isAdjustmentDate:", isAdjustmentDate);
-      console.log("=========================\n");
-    }
+    console.log("  isAdjustmentDate:", isAdjustmentDate);
     
     // ★修正: 年末調整日の場合のみ「年末調整日」ラベルを追加
     var labelText = this.dayLabel;
     if (isAdjustmentDate) {
       labelText += "年末調整日 ";
+      console.log("  「年末調整日」ラベルを追加しました");
     }
+    
+    console.log("  最終的なラベル:", labelText + result_text);
     
     return this.getRemark() + labelText + result_text;
   }
